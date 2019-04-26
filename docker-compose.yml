@@ -169,20 +169,87 @@ services:
   #                           Hue                                 #
   #################################################################
 
-  cloudera:
+  hue:
     image: gethue/hue:latest
     hostname: hue
     container_name: hue
     dns: 8.8.8.8
     #ports:
     # - "8888:8888"
+    networks: 
+      - web
     volumes:
-      - ./hue.ini:/hue/desktop/conf/hue.ini
+      - ./hue/hue.ini:/hue/desktop/conf/hue.ini
     labels:
       traefik.enable: true
       traefik.frontend.rule: Host:hue.docker.localhost
       traefik.port: 8888
 
+  #############################
+  # ELASTICSEARCH MASTER NODE #
+  #############################
+  elastic-master:
+    image: blacktop/elasticsearch:6.2
+    environment:
+      - cluster.name=docker-cluster
+      - node.master=true
+      - node.ingest=false
+      - node.data=false
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+    networks:
+      - elastic
+  ####################################
+  # ELASTICSEARCH CLIENT/INGEST NODE #
+  ####################################
+  elastic-ingest:
+    image: blacktop/elasticsearch:6.2
+    environment:
+      - cluster.name=docker-cluster
+      - node.master=true
+      - node.ingest=true
+      - node.data=false
+      - discovery.zen.ping.unicast.hosts=elastic-master
+    ports:
+      - "9200:9200"
+    networks:
+      - web
+      - elastic
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:elastic.docker.localhost
+      traefik.port: 9200
+  ###########################
+  # ELASTICSEARCH DATA NODE #
+  ###########################
+  elastic-data:
+    image: blacktop/elasticsearch:6.2
+    environment:
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+      - cluster.name=docker-cluster
+      - node.master=false
+      - node.ingest=false
+      - node.data=true
+      - discovery.zen.ping.unicast.hosts=elastic-master
+    # volumes:
+    #   - elastic_data:/usr/share/elasticsearch/data
+    networks:
+      - elastic
+  ###############
+  # KIBANA NODE #
+  ###############
+  kibana:
+    image: blacktop/kibana:6.2
+    #ports:
+    #  - "80:5601"
+    environment:
+      - elasticsearch.url=http://elastic-ingest:9200
+    networks:
+      - web
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:kibana.docker.localhost
+      traefik.port: 5601
   #################################################################
   #                       Docker monitoring                       #
   #################################################################
@@ -319,6 +386,8 @@ networks:
   #   driver: bridge
   hbase:
     driver: bridge
+  elastic:
+    driver: bridge
 
 
 volumes:
@@ -330,3 +399,4 @@ volumes:
   spark_data: {}
   prometheus_data: {}
   grafana_data: {}
+  elastic_data: {}
