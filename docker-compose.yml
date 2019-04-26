@@ -166,9 +166,26 @@ services:
 
 
   #################################################################
-  #                       Docker monitoring                       #
+  #                           Hue                                 #
   #################################################################
 
+  cloudera:
+    image: gethue/hue:latest
+    hostname: hue
+    container_name: hue
+    dns: 8.8.8.8
+    #ports:
+    # - "8888:8888"
+    volumes:
+      - ./hue.ini:/hue/desktop/conf/hue.ini
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:hue.docker.localhost
+      traefik.port: 8888
+
+  #################################################################
+  #                       Docker monitoring                       #
+  #################################################################
 
   prometheus:
     image: prom/prometheus:v2.1.0
