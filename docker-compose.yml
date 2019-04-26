@@ -10,6 +10,7 @@ services:
     image: gettyimages/spark
     command: bin/spark-class org.apache.spark.deploy.master.Master -h spark-master
     hostname: spark-master
+    container_name: spark-master
     environment:
       MASTER: spark://spark-master:7077
       SPARK_CONF_DIR: /conf
@@ -42,6 +43,7 @@ services:
     image: gettyimages/spark
     command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     hostname: spark-worker
+    container_name: spark-worker
     environment:
       SPARK_CONF_DIR: /conf
       SPARK_WORKER_CORES: 2
@@ -190,6 +192,7 @@ services:
   #############################
   elastic-master:
     image: blacktop/elasticsearch:6.2
+    container_name: elastic-master
     environment:
       - cluster.name=docker-cluster
       - node.master=true
@@ -204,6 +207,7 @@ services:
   ####################################
   elastic-ingest:
     image: blacktop/elasticsearch:6.2
+    container_name: elastic-ingest
     environment:
       - cluster.name=docker-cluster
       - node.master=true
@@ -224,6 +228,7 @@ services:
   ###########################
   elastic-data:
     image: blacktop/elasticsearch:6.2
+    container_name: elastic-data
     environment:
       - ES_JAVA_OPTS=-Xms2g -Xmx2g
       - cluster.name=docker-cluster
@@ -240,11 +245,13 @@ services:
   ###############
   kibana:
     image: blacktop/kibana:6.2
+    container_name: kibana
     #ports:
     #  - "80:5601"
     environment:
       - elasticsearch.url=http://elastic-ingest:9200
     networks:
+      - elastic
       - web
     labels:
       traefik.enable: true
@@ -256,6 +263,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.1.0
+    container_name: prometheus
     volumes:
       - ./prometheus/:/etc/prometheus/
       - prometheus_data:/prometheus
@@ -270,6 +278,7 @@ services:
       - cadvisor
     networks:
       - web
+      - monitoring
     labels:
       # traefik.frontend.auth.basic.users: admin:$$apr1$$hJFP6Zo1$$mZqoJoCwZBrZScE5TJy9K0
       traefik.enable: true
@@ -278,6 +287,7 @@ services:
 
   node-exporter:
     image: prom/node-exporter
+    container_name: node-exporter
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -293,6 +303,7 @@ services:
     privileged: true
     networks:
       - web
+      - monitoring
     labels:
       # traefik.frontend.auth.basic.users: admin:$$apr1$$hJFP6Zo1$$mZqoJoCwZBrZScE5TJy9K0
       traefik.enable: true
@@ -301,12 +312,14 @@ services:
 
   alertmanager:
     image: prom/alertmanager
+    container_name: alertmanager
     ports:
       - 9093:9093
     volumes:
       - ./alertmanager/:/etc/alertmanager/
     networks:
       - web
+      - monitoring
     command:
       - '--config.file=/etc/alertmanager/config.yml'
       - '--storage.path=/alertmanager'
@@ -318,6 +331,7 @@ services:
 
   cadvisor:
     image: google/cadvisor
+    container_name: cadvisor
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
@@ -327,6 +341,7 @@ services:
       - 8099:8080
     networks:
       - web
+      - monitoring
     labels:
       # traefik.frontend.auth.basic.users: admin:$$apr1$$hJFP6Zo1$$mZqoJoCwZBrZScE5TJy9K0
       traefik.enable: true
@@ -335,6 +350,7 @@ services:
 
   grafana:
     image: grafana/grafana
+    container_name: grafana
     user: '104'
     depends_on:
       - prometheus
@@ -347,6 +363,7 @@ services:
       - ./grafana/config.monitoring
     networks:
       - web
+      - monitoring
     labels:
       traefik.enable: true
       traefik.frontend.rule: Host:grafana.docker.localhost
@@ -358,6 +375,7 @@ services:
 
   proxy-traefik:
     image: traefik
+    container_name: traefik
     ports:
       - 80:80
       - 443:443
@@ -380,8 +398,8 @@ networks:
   monitoring:
     driver: bridge
   web:
-    # external: true
-    driver: bridge
+    external: true
+    # driver: bridge
   spark:
   #   driver: bridge
   hbase:

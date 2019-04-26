@@ -17,6 +17,13 @@ watch = true
 # Expose services by default in Traefik.
 exposedByDefault = false
 
+# Define a default docker network to use for connections to all containers.
+# Can be overridden by the traefik.docker.network label.
+#
+# Optional
+#
+network = "web"
+
 # Metrics definition
 [metrics]
 
