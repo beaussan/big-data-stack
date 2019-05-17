@@ -1,0 +1,309 @@
+version: '3'
+services:
+
+
+#################################################################
+#                             Spark                             #
+#################################################################
+
+  spark-master:
+    image: gettyimages/spark
+    command: bin/spark-class org.apache.spark.deploy.master.Master -h spark-master
+    hostname: spark-master
+    container_name: spark-master
+    environment:
+      MASTER: spark://spark-master:7077
+      SPARK_CONF_DIR: /conf
+      SPARK_PUBLIC_DNS: 8.8.8.8
+    expose:
+      - 7001
+      - 7002
+      - 7003
+      - 7004
+      - 7005
+      - 7077
+      - 6066
+    ports:
+      - 4040:4040
+      - 6066:6066
+      - 7077:7077
+    #  - 8080:8080 # ui
+    networks: 
+      - spark
+      - web
+    volumes:
+      - ./spark/config/master:/conf
+      - spark_data:/tmp/data
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:spark.docker.localhost
+      traefik.port: 8080
+
+  spark-worker:
+    image: gettyimages/spark
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    hostname: spark-worker
+    container_name: spark-worker
+    environment:
+      SPARK_CONF_DIR: /conf
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_PORT: 8881
+      SPARK_WORKER_WEBUI_PORT: 8081
+      SPARK_PUBLIC_DNS: 8.8.8.8
+    networks:
+      - spark
+      - web
+    depends_on: 
+      - spark-master
+    expose:
+      - 7012
+      - 7013
+      - 7014
+      - 7015
+      - 8881
+    ports:
+      - 8081:8081
+    volumes:
+      - ./spark/config/worker:/conf
+      - spark_data:/tmp/data
+
+#################################################################
+#                             HBase                             #
+#################################################################
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop2.7.4-java8
+    container_name: namenode
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=test
+    env_file:
+      - ./hbase/hadoop.env
+    expose:
+      - 50070
+    ports:
+      - 50070
+    networks:
+      - hbase
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop2.7.4-java8
+    container_name: datanode
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070"
+    env_file:
+      - ./hbase/hadoop.env
+    expose:
+      - 50075
+    ports:
+      - 50075
+    networks:
+      - hbase
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop2.7.4-java8
+    container_name: resourcemanager
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075"
+    env_file:
+      - ./hbase/hadoop.env
+    expose:
+      - 8088
+    ports:
+      - 8088
+    networks:
+      - hbase
+
+  nodemanager1:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop2.7.4-java8
+    container_name: nodemanager
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075 resourcemanager:8088"
+    env_file:
+      - ./hbase/hadoop.env
+    networks:
+      - hbase
+
+  historyserver:
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop2.7.4-java8
+    container_name: historyserver
+    volumes:
+      - hadoop_historyserver:/hadoop/yarn/timeline
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075 resourcemanager:8088"
+    env_file:
+      - ./hbase/hadoop.env
+    networks:
+      - hbase
+
+  hbase:
+    image: bde2020/hbase-standalone:1.0.0-hbase1.2.6
+    container_name: hbase
+    volumes:
+      - hbase_data:/hbase-data
+      - hbase_zookeeper_data:/zookeeper-data
+    ports:
+      - 16000:16000
+    #  - 16010:16010 # ui ? master-status
+      - 16020:16020
+      - 16030:16030
+      - 2888:2888
+      - 3888:3888
+      - 2181:2181
+    networks:
+      - hbase
+      - web
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075"
+    env_file:
+      - ./hbase/hbase-standalone.env
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:hbase.docker.localhost
+      traefik.port: 16010
+
+
+  #################################################################
+  #                           Hue                                 #
+  #################################################################
+
+  hue:
+    image: gethue/hue:latest
+    hostname: hue
+    container_name: hue
+    dns: 8.8.8.8
+    #ports:
+    # - "8888:8888"
+    networks: 
+      - web
+    volumes:
+      - ./hue/hue.ini:/hue/desktop/conf/hue.ini
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:hue.docker.localhost
+      traefik.port: 8888
+
+  #############################
+  # ELASTICSEARCH MASTER NODE #
+  #############################
+  elastic-master:
+    image: blacktop/elasticsearch:6.2
+    container_name: elastic-master
+    environment:
+      - cluster.name=docker-cluster
+      - node.master=true
+      - node.ingest=false
+      - node.data=false
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+    networks:
+      - elastic
+  ####################################
+  # ELASTICSEARCH CLIENT/INGEST NODE #
+  ####################################
+  elastic-ingest:
+    image: blacktop/elasticsearch:6.2
+    container_name: elastic-ingest
+    environment:
+      - cluster.name=docker-cluster
+      - node.master=true
+      - node.ingest=true
+      - node.data=false
+      - discovery.zen.ping.unicast.hosts=elastic-master
+    ports:
+      - "9200:9200"
+    networks:
+      - web
+      - elastic
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:elastic.docker.localhost
+      traefik.port: 9200
+  ###########################
+  # ELASTICSEARCH DATA NODE #
+  ###########################
+  elastic-data:
+    image: blacktop/elasticsearch:6.2
+    container_name: elastic-data
+    environment:
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+      - cluster.name=docker-cluster
+      - node.master=false
+      - node.ingest=false
+      - node.data=true
+      - discovery.zen.ping.unicast.hosts=elastic-master
+    # volumes:
+    #   - elastic_data:/usr/share/elasticsearch/data
+    networks:
+      - elastic
+  ###############
+  # KIBANA NODE #
+  ###############
+  kibana:
+    image: blacktop/kibana:6.2
+    container_name: kibana
+    #ports:
+    #  - "80:5601"
+    environment:
+      - elasticsearch.url=http://elastic-ingest:9200
+    networks:
+      - elastic
+      - web
+    labels:
+      traefik.enable: true
+      traefik.frontend.rule: Host:kibana.docker.localhost
+      traefik.port: 5601
+
+  #################################################################
+  #                             Traeik                            #
+  #################################################################
+
+  proxy-traefik:
+    image: traefik
+    container_name: traefik
+    ports:
+      - 80:80
+      - 443:443
+      - 8080:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik/traefik.toml:/traefik.toml
+      - ./traefik/acme.json:/acme.json
+    networks:
+      - web
+    labels:
+      # traefik.frontend.auth.basic.users: admin:$$apr1$$hJFP6Zo1$$mZqoJoCwZBrZScE5TJy9K0
+      traefik.enable: true
+      traefik.backend: traefik
+      traefik.frontend.rule: Host:traefik.docker.localhost
+      traefik.port: 8080
+
+
+networks: 
+  monitoring:
+    driver: bridge
+  web:
+    external: true
+    # driver: bridge
+  spark:
+     driver: bridge
+  hbase:
+    driver: bridge
+  elastic:
+    driver: bridge
+
+
+volumes:
+  hadoop_namenode: {}
+  hadoop_datanode: {}
+  hadoop_historyserver: {}
+  hbase_data: {}
+  hbase_zookeeper_data: {}
+  spark_data: {}
+  prometheus_data: {}
+  grafana_data: {}
+  elastic_data: {}
